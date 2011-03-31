@@ -30,11 +30,11 @@ $.fn.aggregate = function(target, parser, method) {
     return this;
 };
 
-$.aggregator = function(elems, options) {
+$.aggregator = function(source, options) {
     if ( ! $.aggregator.isAggregator(this) )
-        return new $.aggregator(elems, options);
+        return new $.aggregator(source, options);
     
-    this.source = elems;
+    this.source = source;
     
     this.parsed_values = [];
     this.target_attrs  = [];
@@ -193,7 +193,7 @@ $.extend($.aggregator, {
     options: {
         onEvent: "change keyup",
         method: "sum",
-        parsers: "int",
+        parser: "int",
         fix_NaN: true,
         value_if_NaN: 0
         
@@ -324,7 +324,6 @@ var aggregate_methods = {
         }
         return v;
     },
-    join: Array.prototype.join,
     "default": $.aggregator.options.methods
 };
 

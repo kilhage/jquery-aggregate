@@ -7,7 +7,7 @@
     <script src="jquery.js"></script>
     <script src="bench/jquery-benchmark.js"></script>
     <script src="bench/jquery-benchmark-suit.js"></script>
-    <script src="../jquery.observe<?php echo isset($_GET["a"]) ? $_GET["a"] : "" ?>.js"></script>
+    <script src="../jquery.aggregate<?php echo isset($_GET["a"]) ? $_GET["a"] : "" ?>.js"></script>
     <script src="speed.js"></script>
   </head>
   <body>
