@@ -6,7 +6,11 @@
 (function($, window) {
 
 var EVENT_NAME = "aggregate";
-var DATA_NAME = "aggregator";
+var DATA_NAME = "aggregatorHandler";
+var TARGET = "target";
+var SOURCE = "source";
+
+var element_types = [TARGET, SOURCE];
 
 $.fn.aggregate = function(target, parser, method) {
     var options = {};
@@ -24,47 +28,33 @@ $.fn.aggregate = function(target, parser, method) {
     }
     else options = target;
     
-
-    $.aggregator(this, options);
+    var aggregator = new $.aggregator(this, options);
     
-    return this;
+    return aggregator;
 };
 
 $.aggregator = function(source, options) {
     if ( ! $.aggregator.isAggregator(this) )
         return new $.aggregator(source, options);
     
-    this.source = source;
-    
-    this.parsed_values = [];
-    this.target_attrs  = [];
-    
-    this.updateSourceAttrs()
-            
-    options = $.extend(true, this.options = {}, $.aggregator.options, options);
-
-    $.each({
-        parser: parsers, 
-        method: aggregate_methods
-    }, function(option, object) {
-        options[option] = getOption(options, option, object);
-    });
-
-    if ( typeof options.id == "string" )
-        this.event_name += "."+options.id;
-
+    this.source = $(source);
+    this.options = $.aggregator.parseOptions(options);
     this.target = $(options.target);
-
-    if ( ! this.target[0] )
-        $.error("$.aggregator:: Cannot locate any target elements");
+    delete options.target;
+    this.updateAttrs().bind();
     
-    this.value = this.updateTargetAttrs().bind().getAggregatedValue();
+    if ( this.options.start_by_aggregate === true )
+        this.aggregate();
+    else
+        this.value = this.getAggregatedValue();
 };
 
 $.extend($.aggregator, {
     
     DATA_NAME: DATA_NAME,
     EVENT_NAME: EVENT_NAME,
+    SOURCE: SOURCE,
+    TARGET: TARGET,
     
     prototype: {
         
@@ -74,36 +64,30 @@ $.extend($.aggregator, {
             return this.updateTargetAttrs().updateSourceAttrs();
         },
         
-        updateTargetAttrs: function() {
-            var self = this;
-            this.target_attrs = [];
-            this.target.each(function(i, elem) {
-                self.target_attrs[i] = getContentAttr(elem);
-            });
-            return this;
-        },
-        
-        updateSourceAttrs: function() {
-            var self = this;
-            this.source_attrs = [];
-            this.source.each(function(i, elem) {
-                self.source_attrs[i] = getContentAttr(elem);
-            });
-            return this;
-        },
-        
         bind: function() {
-            this.source.bind(this.event_name, this, event_aggregate_callback)
-                       .bind(this.options.onEvent, event_aggregate_callback);
-                       
-            this.target.bind(this.event_name, this, event_aggregate_callback);
+            return this._bindSource(this.source)._bind(this.target, true);
+        },
+        
+        _bind: function(elem, is_target) {
+            var data = {
+                aggregator: this,
+                type: (is_target ? $.aggregator.TARGET : $.aggregator.SOURCE)
+            };
             
+            elem.bind(this.event_name, data, event_aggregate_callback);
+            
+            return this;
+        },
+        
+        _bindSource: function(elem) {
+            elem.bind(this.options.onEvent, event_aggregate_callback);
+            this._bind(elem);
             return this;
         },
         
         unbind: function() {
             this._unbind(this.source, true);
-                      
+            
             this.target.unbind(this.event_name, event_aggregate_callback);
             
             return this;
@@ -119,26 +103,43 @@ $.extend($.aggregator, {
             return this.checkEmpty();
         },
         
-        removeElem: function(elem) {
-            $.removeData(elem, DATA_NAME);
+        remove: function(elem) {
+            var self = this;
+            elem = $(elem);
+            var _elem = elem[0];
+            
             this.source = this.source.filter(function() {
-                return this != elem;
+                var is = this == _elem;
+                
+                if ( is )
+                    self.removeFromHandler(this);
+                
+                return ! is;
             });
             
             return this._unbind(elem).updateAttrs();
         },
         
         destroy: function() {
-            this.source = this.source.filter(function(i, elem){
-                $.removeData(elem, DATA_NAME);
-                return false;
+            var self = this;
+            
+            $.each(element_types, function(i, type) {
+                self[type] = self[type].filter(function(i, elem) {
+                    self.removeFromHandler(this, type);
+                    return false;
+                });
             });
             
-            this.target = this.target.filter(function(i, elem){
-                $.removeData(elem, DATA_NAME);
-                return false;
-            });
+            return this;
+        },
+        
+        removeFromHandler: function(elem, type){
+            var handler = $.aggregator.get(elem);
             
+            if ( ! $.aggregator.isHandler(handler) )
+                $.error("$.aggregator::removeFromHandler: element is not bound to a aggregator-handler");
+            
+            handler.remove(this, type);
             return this;
         },
         
@@ -153,16 +154,13 @@ $.extend($.aggregator, {
         aggregate: function() {
             var self = this, 
                 value = this.getAggregatedValue();
-            
-            if ( this.value != value ) {
                 
-                this.value = value;
+            this.value = value;
                 
-                this.target.each(function(i, elem) {
-                    elem[self.target_attrs[i]] = value;
+            this.target.each(function(i, elem) {
+                elem[self.target_attrs[i]] = value;
                 
-                }).trigger(this.event_name, [this]).trigger("change");
-            }
+            }).trigger(this.event_name, [this]).trigger("change");
             
             return this;
         },
@@ -170,17 +168,17 @@ $.extend($.aggregator, {
         getAggregatedValue: function() {
             var self = this;
             
-            this.parsed_values = [];
+            var parsed_values = [];
             this.source.each(function(i, elem) {
                 var value = self.options.parser(elem[self.source_attrs[i]]);
                 
                 if ( self.options.fix_NaN === true && isNaN(value) ) 
                     value = self.options.value_if_NaN;
                 
-                self.parsed_values.push(value);
+                parsed_values.push(value);
             });
             
-            var value = this.options.method.call(this.parsed_values);
+            var value = this.options.method.call(parsed_values);
             
             if ( typeof this.options.fix_value == "function" )
                 value = this.options.fix_value.call(this, value);
@@ -195,7 +193,8 @@ $.extend($.aggregator, {
         method: "sum",
         parser: "int",
         fix_NaN: true,
-        value_if_NaN: 0
+        value_if_NaN: 0,
+        start_by_aggregate: true
         
         /* available options
         id: "",
@@ -206,8 +205,12 @@ $.extend($.aggregator, {
         */
     },
     
-    isAggregator: function(elem){
+    isAggregator: function(elem) {
         return elem instanceof $.aggregator;
+    },
+    
+    isHandler: function(elem) {
+        return elem instanceof $.aggregator.handler;
     },
     
     addMethod: function(name, fn) {
@@ -222,24 +225,142 @@ $.extend($.aggregator, {
     
     get: function(elem){
         if ( typeof elem == "string") elem = $(elem);
-        return $.data(elem.jquery ? elem[0] : elem, DATA_NAME);
+        return $(elem).data(DATA_NAME);
+    },
+    
+    parseOptions: function(options) {
+        var _options = {};
+        options = $.extend(true, _options, $.aggregator.options, options);
+
+        $.each(option_maps, function(option, object) {
+            _options[option] = getOption(_options, option, object);
+        });
+        
+        return _options;
     }
     
 });
 
+$.each(["Target", "Source"], function(i, name) {
+
+    var name_lower = name.toLowerCase();
+    var method_name = "add"+name;
+    var update_method = "update"+name+"Attrs";
+    var attrs_key = name_lower+"_attrs";
+    
+    $.aggregator.prototype[method_name] = function(elem) {
+        var elems = this[name_lower];
+        
+        elem = $(elem);
+        
+        elem.each(function() {
+            elems[elems.length++] = this;
+        });
+        
+        if ( name_lower == SOURCE ) {
+            this._bindSource(elem);
+        } else {
+            this._bind(elem, true);
+        }
+        
+        return this[update_method]();
+    };
+    
+    $.aggregator.prototype[update_method] = function() {
+        var self = this;
+        this[attrs_key] = [];
+
+        this[name_lower].each(function(i, elem) {
+            self[attrs_key][i] = getContentAttr(elem);
+        });
+
+        return this;
+    };
+    
+});
+
+$.aggregator.prototype.add = $.aggregator.prototype.addSource;
+
+$.aggregator.handler = function(element) {
+    this.element = element;
+    this.source = [];
+    this.target = [];
+};
+
+$.aggregator.handler.prototype = {
+    
+    add: function(aggregator, type) {
+        var aggregators = this[type];
+        
+        if ( ! aggregators ) 
+            $.error("invalid type: "+type);
+        
+        if ( $.inArray(aggregator, aggregators) == -1 )
+            aggregators.push(aggregator);
+        
+        return this;
+    },
+    
+    remove: function(aggregator, type) {
+        var self = this;
+        
+        $.each(type ? [type] : element_types, function(_, type) {
+            var aggregators = self[type], i = 0, l = aggregators.length;
+            
+            if ( ! aggregators ) 
+                $.error("invalid type: "+type);
+            
+            for (; i < l ; i++ ) {
+                if ( aggregators[i] === aggregator ) {
+                    delete aggregators[aggregators.length--];
+                }
+            }
+        });
+        
+        return this;
+    },
+    
+    destroy: function() {
+        return this._callAggregatorMethod("remove", [this.element]);
+    },
+
+    aggregate: function() {
+        return this._callAggregatorMethod("aggregate");
+    },
+    
+    _callAggregatorMethod: function(name, args) {
+        var i = this.source.length, aggregator;
+        
+        args = args || [];
+        
+        while(i--) {
+            aggregator = this.source[i];
+            if ( aggregator ) {
+                aggregator[name].apply(aggregator, args);
+            }
+                
+        }
+        
+        return this;
+    }
+    
+};
+
 $.event.special[EVENT_NAME] = {
     
-    setup: function(aggregator) {
-        if ( ! $.aggregator.isAggregator(aggregator)  )
-            $.error("$.aggregator:: Unable to setup element aggregator without an $.aggregator...");
+    setup: function(data) {
+        var handler = $.data(this, DATA_NAME, new $.aggregator.handler(this));
+        if ( typeof data === "object" && $.aggregator.isAggregator(data.aggregator) ) {
+            handler.add(data.aggregator, data.type);
+        }
         
-        $.data(this, DATA_NAME, aggregator);
     },
     
     teardown: function() {
-        var aggregator = $.aggregator.get(this);
-        if ( $.aggregator.isAggregator(aggregator) )
-            aggregator.removeElem(this);
+        var handler = $.aggregator.get(this);
+        if ( ! $.aggregator.isHandler(handler) ) return;
+        handler.destroy();
+        $.removeData(this, DATA_NAME);
     }
     
 };
@@ -249,24 +370,16 @@ function isNaN(num) {
 }
 
 function getOption(options, key, from) {
-    var type = $.type(options[key]), option;
+    var type = typeof options[key], option;
 
     if ( type == "function" ) 
-        option = options[key];
+        return options[key];
 
-    else if ( type == "string" && from[options[key]] ) 
+    else if ( type == "string" ) 
         option = from[options[key]];
     
-    else if ( typeof from[from["default"]] == "function" )
-        option = from[from["default"]];
-    
-    else if ( typeof from[from["default"]] == "string" &&
-            typeof from[from[from["default"]]] == "function" )
-            
-        option = from[from[from["default"]]];
-    
-    else
-        $.error("$.aggregator:: Unable to parse option "+key);
+    if ( ! option ) 
+        $.error("$.aggregator:: Unable to find option "+key);
 
     return option;
 }
@@ -276,26 +389,25 @@ function validLength(elems) {
 }
 
 function getContentAttr(elem) {
-    return $(elem).is("input,textarea") ? "value" : "innerHTML";
+    return elem ? ($(elem).is("input,textarea") ? "value" : "innerHTML") : null;
 }
 
-var event_aggregate_callback = function(event) {
-    var aggregator = $.aggregator.get(this);
+var event_aggregate_callback = function() {
+    var handler = $.aggregator.get(this);
     
-    if ( ! $.aggregator.isAggregator(aggregator)  )
-        $.error("$.aggregator:: Unable to aggregate elements without an $.aggregator...");
+    if ( ! $.aggregator.isHandler(handler)  )
+        $.error("$.aggregator:: Unable to aggregate elements without an $.aggregator.handler...");
     
-    aggregator.aggregate();
+    handler.aggregate();
 };
 
 var parsers = {
     "int": window.parseInt,
-    "float": window.parseFloat,
-    string: window.String,
-    "default": $.aggregator.options.parser
+    "float": window.parseFloat
 };
 
 var aggregate_methods = {
+
     sum: function sum() {
         var v = this[0];
         for( var i = 1, l = this.length; i < l; i++ ) {
@@ -303,6 +415,7 @@ var aggregate_methods = {
         }
         return v;
     },
+    
     multiply: function multiply(){
         var v = this[0];
         for( var i = 1, l = this.length; i < l; i++ ) {
@@ -310,6 +423,7 @@ var aggregate_methods = {
         }
         return v;
     },
+
     divide: function divide(){
         var v = this[0];
         for( var i = 1, l = this.length; i < l; i++ ) {
@@ -317,14 +431,19 @@ var aggregate_methods = {
         }
         return v;
     },
+    
     sub: function sub(){
         var v = this[0];
         for( var i = 1, l = this.length; i < l; i++ ) {
             v -= this[i];
         }
         return v;
-    },
-    "default": $.aggregator.options.methods
+    }
+};
+
+var option_maps = {
+    parser: parsers, 
+    method: aggregate_methods
 };
 
 }(jQuery, window));
