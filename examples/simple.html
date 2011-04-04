@@ -1,0 +1,39 @@
+<!doctype html>
+<html>
+  <head>
+    <title></title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <script src="../test/jquery.js"></script>
+    <script src="../jquery.aggregate.js"></script>
+  </head>
+  <body>
+  <center>
+      <h2></h2>
+      <table>
+        <thead>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td>Amount:</td>
+            </tr>
+        </thead>
+        <tbody>
+        <tr>
+            <td><input class="aggregate_sum_from" value="1" /></td>
+            <td><input class="aggregate_sum_from" value="5" /></td>
+            <td><input class="aggregate_sum_from" value="2" /></td>
+            <td><span id="aggregate_sum_to"></span></td>
+        </tr>
+        </tbody>
+      </table>
+      <script>
+          
+          $(function() {
+              $(".aggregate_sum_from").aggregate("#aggregate_sum_to");
+          });
+          
+      </script>
+  </center>
+  </body>
+</html>

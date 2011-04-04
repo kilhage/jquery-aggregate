@@ -196,8 +196,24 @@ test("Removing elements", function(){
 
 module("Multiple");
 
-test("", function(){
+test("Is bound", function(){
     
+    var elems = create(4);
+    var target = create(4);
+    var target2 = create(1);
+
+    var aggregator = elems.aggregate(target);
     
+    var aggregator2 = target.aggregate(target2);
+    
+    elems.val("1").trigger("change");
+    
+    target.each(function(){
+        var handler = $.aggregator.get(this);
+        ok($.inArray(aggregator, handler.target) !== -1);
+        ok($.inArray(aggregator2, handler.source) !== -1);
+    });
+    
+    equals(target2.val(), "16");
     
 });

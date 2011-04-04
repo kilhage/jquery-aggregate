@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+  <head>
+    <title></title>
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <script src="../test/jquery.js"></script>
+    <script src="../jquery.aggregate.js"></script>
+  </head>
+  <body>
+  <center>
+      <h2></h2>
+      <table>
+        <thead>
+            <tr>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        </thead>
+        <tbody id="aggregate_body">
+        <tr>
+            <td><input class="aggregate_sum_from" value="1" /></td>
+            <td><input class="aggregate_sum_from" value="5" /></td>
+            <td><input class="aggregate_sum_from" value="2" /></td>
+            <td><span class="aggregate_sum_to aggregate_total_from"></span></td>
+        </tr>
+        <tr>
+            <td><input class="aggregate_sum_from" value="2" /></td>
+            <td><input class="aggregate_sum_from" value="4" /></td>
+            <td><input class="aggregate_sum_from" value="2" /></td>
+            <td><span class="aggregate_sum_to aggregate_total_from"></span></td>
+        </tr>
+        <tr>
+            <td><input class="aggregate_sum_from" value="6" /></td>
+            <td><input class="aggregate_sum_from" value="2" /></td>
+            <td><input class="aggregate_sum_from" value="1" /></td>
+            <td><span class="aggregate_sum_to aggregate_total_from"></span></td>
+        </tr>
+        </tbody>
+        <tbody>
+        <tr>
+            <td colspan="4">
+                Total: <span id="aggregate_total_to"></span>
+            </td>
+        </tr>
+        </tbody>
+      </table>
+      <script>
+          
+          $(function(){
+              
+              $("#aggregate_body").find("tr").each(function(){
+                  $(this).find(".aggregate_sum_from").aggregate({
+                      target: $(this).find(".aggregate_sum_to"),
+                      parser: "int",
+                      method: "sum"
+                  });
+              });
+              
+              // We can also use a simpler syntax
+              $(".aggregate_total_from").aggregate("#aggregate_total_to", "int", "sum");
+              
+          });
+          
+      </script>
+  </center>
+  </body>
+</html>
