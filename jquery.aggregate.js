@@ -4,7 +4,7 @@
  * Author Emil Kilhage
  * MIT Licensed
  *--------------------------------------------*
- * Last Update: 2011-04-04 22:29:30
+ * Last Update: 2011-04-08 00:20:15
  * Version x
  *--------------------------------------------*/
 (function($, undefined) {
@@ -16,23 +16,72 @@ var SOURCE = "source";
 
 var element_types = [TARGET, SOURCE];
 
+var slice = Array.prototype.slice;
+
+/**
+ * Proxy methods to interact with the aggregator-handlers
+ */
+var methods = {
+    
+    aggregate: function() {
+        return this.trigger(EVENT_NAME);
+    },
+    
+    remove: function() {
+        var args = arguments;
+        
+        return this.each(function() {
+            
+            var handler = $.aggregator.get(this);
+            
+            if ( $.aggregator.isHandler(handler) )
+                handler.destroy.apply(handler, args);
+        });
+    },
+    
+    get: function() {
+        var element = this[0], 
+            aggregators = false, 
+            handler;
+
+        if ( element ) {
+            handler = $.aggregator.get(element);
+            
+            if ( $.aggregator.isHandler(handler) )
+                aggregators = handler.get.apply(handler, arguments)
+        }
+        
+        return aggregators;
+    }
+    
+};
+
 $.fn.aggregate = function(target, parser, method) {
+    
+    var type = typeof target, options = {}, args = arguments;
     
     if ( ! target )
         return this.trigger(EVENT_NAME);
+        
+    if( type == "string" && $.type(methods[target]) == "function" )
+        return methods[target].apply(this, slice.call(args, 1));
     
-    var options = {};
+    if ( type === "function" )
+        return this.bind(EVENT_NAME, target);
     
-    if ( typeof target == "string" || target.nodeType || target.jquery ) {
+    if ( type == "string" || target.nodeType || target.jquery ) {
         options.target = target;
         
-        if ( parser )
+        if ( typeof oarser == "function" )
+            this.bind(EVENT_NAME, parser);
+        
+        else if ( parser )
             options.parser = parser;
 
         if ( method )
             options.method = method;
     }
-    else options = target;
+    else if ( type == "object" ) options = target;
     
     var aggregator = new $.aggregator(this, options);
     
@@ -50,16 +99,20 @@ $.aggregator = function(source, options) {
     if ( ! $.aggregator.isAggregator(self) )
         return new $.aggregator(source, options);
     
+    this.aggregateCallback = function() {
+        self.aggregate();
+    };
+    
     self.source = $(source);
     options = self.options = $.aggregator.parseOptions(options);
     self.target = $(options.target);
     delete options.target;
     self.updateAttrs().bind();
     
+    self.value = self.getAggregatedValue();
+    
     if ( self.options.start_by_aggregate === true )
         self.aggregate();
-    else
-        self.value = self.getAggregatedValue();
 };
 
 $.extend($.aggregator, {
@@ -73,7 +126,7 @@ $.extend($.aggregator, {
     /* Instance methods */
     prototype: {
         
-        event_name: EVENT_NAME,
+        _is_aggregating: false,
         
         /**
          * Updates the target and source attribute-cache
@@ -100,7 +153,7 @@ $.extend($.aggregator, {
                 type: (is_target ? $.aggregator.TARGET : $.aggregator.SOURCE)
             };
             
-            elem.bind(this.event_name, data, event_aggregate_callback);
+            elem.bind(EVENT_NAME, data, this.aggregateCallback);
             
             return this;
         },
@@ -109,7 +162,7 @@ $.extend($.aggregator, {
          * @return self
          */
         _bindSource: function(elem) {
-            elem.bind(this.options.onEvent, event_aggregate_callback);
+            elem.bind(this.options.onEvent, this.aggregateCallback);
             this._bind(elem);
             return this;
         },
@@ -123,7 +176,7 @@ $.extend($.aggregator, {
             var self = this;
             self._unbind(self.source, true);
             
-            self.target.unbind(self.event_name, event_aggregate_callback);
+            self.target.unbind(EVENT_NAME, this.aggregateCallback);
             
             return self;
         },
@@ -135,10 +188,10 @@ $.extend($.aggregator, {
          */
         _unbind: function(elem, unbind_all) {
             elem = $(elem);
-            elem.unbind(this.options.onEvent, event_aggregate_callback);
+            elem.unbind(this.options.onEvent, this.aggregateCallback);
             
             if ( unbind_all )
-                elem.unbind(this.event_name, event_aggregate_callback);
+                elem.unbind(EVENT_NAME, this.aggregateCallback);
             
             return this;
         },
@@ -193,7 +246,7 @@ $.extend($.aggregator, {
          * @param <string> type
          * @return self
          */
-        removeFromHandler: function(elem, type){
+        removeFromHandler: function(elem, type) {
             var handler = $.aggregator.get(elem);
             
             if ( ! $.aggregator.isHandler(handler) )
@@ -210,19 +263,44 @@ $.extend($.aggregator, {
          * @return self
          */
         aggregate: function() {
-            var self = this, 
-                value = this.getAggregatedValue();
-                
-            self.value = value;
-                
-            self.target.each(function(i, elem) {
-                elem[self.target_attrs[i]] = value;
-                
-            }).trigger(self.event_name, [self]).trigger("change");
-            
+            var self = this;
+            if ( self._is_aggregating == false ) {
+
+                var value = this.getAggregatedValue();
+
+                if ( self.options.tostring === true )
+                    value = String(value);
+
+                // Only update the targets if the value is changed
+                if (  value !== self.value || ! value ) {
+
+                    self.value = value;
+
+                    // Avoids an infinate loop when triggering the 
+                    // aggregate event on the target elements
+                    self._is_aggregating = true;
+
+                    self.source.trigger(EVENT_NAME, [self, SOURCE]);
+
+                    self.target.each(function(i, elem) {
+                        //// The change event should only be triggered 
+                        // if the target-element is changed
+                        if ( elem[self.target_attrs[i]] !== value ) {
+                            
+                            elem[self.target_attrs[i]] = value;
+                            $(this).trigger("change");
+                        }
+
+                    }).trigger(EVENT_NAME, [self, TARGET]);
+
+                    self._is_aggregating = false;
+
+                }
+            }
+
             return self;
         },
-        
+
         /**
          * @return mixed
          */
@@ -258,6 +336,8 @@ $.extend($.aggregator, {
         
         fix_NaN: true,
         value_if_NaN: 0,
+        
+        tostring: true,
         
         // If set to true, the target elements will be 
         // updated with the aggregated value when the aggregator is initalized
@@ -398,6 +478,28 @@ var handler_message_prefix = "$.aggregator.handler::";
 $.aggregator.handler.prototype = {
     
     /**
+     * 
+     */
+    get: function(type, index) {
+        if ( ! type ) {
+            var ret = [];
+            $.merge(ret, this.source);
+            $.merge(ret, this.target);
+            return ret;
+        }
+        
+        if ( $.inArray(type, element_types) == -1 )
+            $.error("invalid type: " + type);
+        
+        var aggregators = this[type];
+        
+        if ( ! aggregators ) 
+            $.error(handler_message_prefix+"add: invalid type: "+type);
+        
+        return typeof index == "number" ? aggregators[index] : aggregators;
+    },
+    
+    /**
      * Adds an aggregator to the a collection
      * 
      * @param <instanceof $.aggregator> aggregator: 
@@ -405,10 +507,7 @@ $.aggregator.handler.prototype = {
      * @return self
      */
     add: function(aggregator, type) {
-        var aggregators = this[type];
-        
-        if ( ! aggregators ) 
-            $.error(handler_message_prefix+"add: invalid type: "+type);
+        var aggregators = this.get(type);
         
         if ( ! $.aggregator.isAggregator(aggregator) ) 
             $.error(handler_message_prefix+"add: invalid input: aggregator is not an instance of $.aggregator");
@@ -428,7 +527,7 @@ $.aggregator.handler.prototype = {
         var self = this;
         
         $.each(type ? [type] : element_types, function(_, type) {
-            var aggregators = self[type], i = 0, l = aggregators.length;
+            var aggregators = self.get(type), i = 0, l = aggregators.length;
             
             if ( ! aggregators ) 
                 $.error(handler_message_prefix+"remove: invalid type: "+type);
@@ -447,34 +546,36 @@ $.aggregator.handler.prototype = {
      * Removes the element from all aggregators that the element is a source of
      * @return self
      */
-    destroy: function() {
-        return this._callAggregatorMethod("remove", [this.element]);
+    destroy: function(type) {
+        return this._callAggregatorMethod("remove", type, [this.element]);
     },
     
     /**
      * Updates all aggregators that the element is a source of
      * @return self
      */
-    aggregate: function() {
-        return this._callAggregatorMethod("aggregate");
+    aggregate: function(type) {
+        return this._callAggregatorMethod("aggregate", type);
     },
     
     /**
-     * Makes it easier to call a method in all aggregators that the element is a source of
+     * Proxy method to the $.aggregator instances
      * 
      * @param <string> name: the name of the method
      * @param <array> args: arguments
      * @return self
      */
-    _callAggregatorMethod: function(name, args) {
+    _callAggregatorMethod: function(name, type, args) {
         var self = this;
-        
-        var i = self.source.length, aggregator;
+        type || (type = SOURCE);
+        var aggregators = this.get(type), 
+            i = aggregators.length, 
+            aggregator;
         
         args = args || [];
         
         while(i--) {
-            aggregator = self.source[i];
+            aggregator = aggregators[i];
             if ( aggregator ) {
                 aggregator[name].apply(aggregator, args);
             }
@@ -544,15 +645,6 @@ function getOption(options, key, from) {
 function getContentAttr(elem) {
     return elem ? ($(elem).is("input,textarea") ? "value" : "innerHTML") : null;
 }
-
-var event_aggregate_callback = function() {
-    var handler = $.aggregator.get(this);
-    
-    if ( ! $.aggregator.isHandler(handler)  )
-        $.error("$.aggregator:: Unable to aggregate elements without an $.aggregator.handler...");
-    
-    handler.aggregate();
-};
 
 /**
  * Default parsers that parses the element values

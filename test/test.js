@@ -1,11 +1,11 @@
 
 var log = function() {console.log.apply(console, arguments);};
-
+var _i = 0;
 function create(i, add){
     var e = "";
     add = add || "";
     while(i--)
-        e += "<input type='input' class='_"+i+"' "+add+" />";
+        e += "<input type='input' class='_"+i+"' id='"+(_i++)+"' "+add+" />";
     return $(e);
 }
 
@@ -42,6 +42,70 @@ $.each(["change", "keyup"], function(i, event_name) {
         equals(target.val(), "10");
 
     });
+
+});
+
+test("aggregator.destroy(); works correctly", function() {
+    
+    var elems = create(4);
+    var target = create(1);
+    
+    var aggregator = elems.aggregate(target);
+    
+    elems.val("1").change();
+    
+    equal(target.val(), "4");
+    
+    var target_2 = create(1);
+    
+    elems.aggregate(target_2);
+    
+    elems.val("2").change();
+    
+    equal(target.val(), "8");
+    equal(target_2.val(), "8");
+    
+    aggregator.destroy();
+    
+    elems.val("3").change();
+    
+    equal(target.val(), "8");
+    equal(target_2.val(), "12");
+    
+});
+
+test("aggregate event", function() {
+    
+    var elems = create(4);
+    var target = create(1);
+    
+    var i = 0, valid = false;
+    
+    var action = function(){
+        valid = true;
+    }
+    
+    elems.aggregate(target, action);
+    
+    ok(valid, "elems.aggregate(target, action); works");
+    
+    valid = false;
+    
+    elems.aggregate(action);
+    
+    elems.aggregate();
+    
+    ok(valid, "elems.aggregate(action); to bind and elems.aggregate(); to trigger works");
+    
+    valid = false;
+    
+    elems.bind("aggregate", action);
+    
+    elems.trigger("aggregate");
+    
+    ok(valid, 'elems.bind("aggregate", action); and elems.trigger("aggregate"); works');
+    
+    valid = false;
 
 });
 
@@ -102,7 +166,7 @@ test("Divide", function() {
     
     equals(target.val(), (7/7/7/7)+"");
     
-    elems.first().val(1).trigger("change");
+    elems.first().val("1").trigger("change");
     
     equals(target.val(), (1/7/7/7)+"");
     
@@ -128,8 +192,6 @@ test("Sub", function() {
     equals(target.val(), (1-7-7-7)+"");
     
 });
-
-module("Unbind");
 
 module("Modify aggregators");
 
@@ -164,10 +226,10 @@ test("Adding elements", function(){
     
 });
 
-test("Removing elements", function(){
+test("Removing elements", function() {
     
     var elems = create(4);
-    var target = create(1, "data-is_target='true'");
+    var target = create(1);
 
     var aggregator = elems.aggregate(target);
     
@@ -215,5 +277,123 @@ test("Is bound", function(){
     });
     
     equals(target2.val(), "16");
+    
+});
+
+module("Methods");
+
+test("aggregate", function() {
+    
+    var elems = create(4);
+    var target = create(4);
+    
+    target.val("0");
+
+    elems.aggregate(target);
+    
+    elems.val("1");
+    
+    var ret = elems.aggregate("aggregate");
+    
+    ok(!!ret.jquery);
+    
+    equal(target.val(), "4");
+    
+});
+
+test("get", function() {
+    
+    var elems = create(4);
+    var target = create(4);
+
+    var aggregator = elems.aggregate(target);
+    
+    var ret = elems.aggregate("get");
+    
+    ok($.isArray(ret));
+    
+    ok(ret[0] == aggregator);
+    
+    equal(ret.length, 1);
+    
+    ret = elems.aggregate("get", "source");
+    
+    ok($.isArray(ret));
+    
+    ok(ret[0] == aggregator);
+    
+    equal(ret.length, 1);
+    
+    ret = elems.aggregate("get", "source", 0);
+    
+    ok(ret == aggregator);
+    
+    ret = elems.aggregate("get", "target");
+    
+    equal(ret.length, 0);
+    
+    equal(elems.aggregate("get", "target", 0), undefined);
+    
+    
+    // Over to the target
+    
+    ret = target.aggregate("get");
+    
+    ok($.isArray(ret));
+    
+    ok(ret[0] == aggregator);
+    
+    equal(ret.length, 1);
+    
+    ret = target.aggregate("get", "target");
+    
+    ok($.isArray(ret));
+    
+    ok(ret[0] == aggregator);
+
+    equal(ret.length, 1);
+    
+    ret = target.aggregate("get", "target", 0);
+    
+    ok(ret == aggregator);
+    
+    ret = target.aggregate("get", "source");
+    
+    equal(ret.length, 0);
+    
+    equal(target.aggregate("get", "source", 0), undefined);
+    
+});
+
+test("remove", function() {
+    
+    var elems = create(4);
+    var target = create(1);
+    
+    var valid = false;
+
+    a = elems.aggregate(target);
+    
+    elems.val("1").change();
+    
+    equal(target.val(), "4");
+    
+    target.change(function() {
+        valid = true;
+    });
+    
+    elems.aggregate(function() {
+        ok(false);
+    });
+    
+    elems.aggregate("remove");
+    
+    elems.val("2").change();
+    
+    equal(target.val(), "4");
+    
+    equal(target.aggregate().val(), "0");
+    
+    ok(valid);
     
 });
