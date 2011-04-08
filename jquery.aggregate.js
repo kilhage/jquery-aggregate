@@ -72,7 +72,7 @@ $.fn.aggregate = function(target, parser, method) {
     if ( type == "string" || target.nodeType || target.jquery ) {
         options.target = target;
         
-        if ( typeof oarser == "function" )
+        if ( typeof parser == "function" )
             this.bind(EVENT_NAME, parser);
         
         else if ( parser )
