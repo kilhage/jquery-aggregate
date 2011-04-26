@@ -256,9 +256,29 @@ test("Removing elements", function() {
     
 });
 
+module("Handler");
+
+test("remove", function() {
+    
+    var elems = create(4);
+    var target = create(1);
+
+    var aggregator = elems.aggregate(target);
+    var aggregator2 = elems.aggregate(target);
+    
+    var handler = $.aggregator.get(elems[2]);
+    
+    ok($.inArray(aggregator, handler.source) != -1);
+    
+    handler.remove(aggregator);
+    
+    ok($.inArray(aggregator, handler.source) == -1);
+    
+});
+
 module("Multiple");
 
-test("Is bound", function(){
+test("Is bound", function() {
     
     var elems = create(4);
     var target = create(4);
@@ -372,7 +392,7 @@ test("remove", function() {
     
     var valid = false;
 
-    a = elems.aggregate(target);
+    var a = elems.aggregate(target);
     
     elems.val("1").change();
     
@@ -396,4 +416,43 @@ test("remove", function() {
     
     ok(valid);
     
+});
+
+module("Internal");
+
+test("Parsers", function() {
+    
+    var elems = create(2);
+    var target = create(1);
+
+    var a = elems.aggregate({
+        target: target,
+        parser: "formatedNumber"
+    });
+    
+    elems.val("14.444,55").change();
+    
+    equal(target.val(), "28.889,1");
+    
+    elems.val("14444,55").change();
+    
+    equal(target.val(), "28.889,1");
+    
+    var elemsS = $(elems[1]).aggregate("remove");
+    
+    var elemsF = elems.slice(0, 1);
+    
+    elemsF.val("14.44.4,55").change();
+    
+    equal(target.val(), "14.444,55");
+    
+    elemsF.val("14444,55").change();
+    
+    equal(target.val(), "14.444,55");
+    
+    a.add(elemsS);
+    
+    elemsS.val("434.32.432").change();
+    
+    equal(target.val(), "43.446.876,55");
 });

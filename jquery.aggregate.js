@@ -4,19 +4,25 @@
  * Author Emil Kilhage
  * MIT Licensed
  *--------------------------------------------*
- * Last Update: 2011-04-08 00:20:15
+ * Last Update: 2011-04-27 00:31:39
  * Version x
  *--------------------------------------------*/
-(function($, undefined) {
+(function($, window, undefined) {
 
-var EVENT_NAME = "aggregate";
-var DATA_NAME = "aggregatorHandler";
-var TARGET = "target";
-var SOURCE = "source";
+var EVENT_NAME = "aggregate",
+    DATA_NAME = "aggregatorHandler",
+    TARGET = "target",
+    SOURCE = "source",
+    element_types = [TARGET, SOURCE],
 
-var element_types = [TARGET, SOURCE];
+    unformat_number_regexps = {},
+    format_number_regexps = {},
+    handler_message_prefix = "$.aggregator.handler::",
 
-var slice = Array.prototype.slice;
+    String = window.String,
+    parseInt = window.parseInt,
+    parseFloat = window.parseFloat,
+    slice = window.Array.prototype.slice;
 
 /**
  * Proxy methods to interact with the aggregator-handlers
@@ -55,6 +61,8 @@ var methods = {
     }
     
 };
+
+methods.destroy = methods.remove;
 
 $.fn.aggregate = function(target, parser, method) {
     
@@ -305,20 +313,22 @@ $.extend($.aggregator, {
          * @return mixed
          */
         getAggregatedValue: function() {
-            var self = this;
+            var self = this, options = self.options;
             
             var parsed_values = [];
             self.source.each(function(i, elem) {
-                var value = self.options.parser(elem[self.source_attrs[i]]);
+                var value = options.parser.call(self, elem[self.source_attrs[i]], this);
                 
-                if ( self.options.fix_NaN === true && isNaN(value) ) 
-                    value = self.options.value_if_NaN;
+                if ( options.fix_NaN === true && isNaN(value) ) 
+                    value = options.value_if_NaN;
                 
                 parsed_values.push(value);
             });
             
-            return parsed_values.length > 0 ?
-                    self.options.method.call(parsed_values) : 0;
+            var value = parsed_values.length > 0 ?
+                    options.method.call(parsed_values, this) : options.empty_value;
+            
+            return options.converter ? options.converter.call(this, value) : value;
         }
         
     },
@@ -336,9 +346,15 @@ $.extend($.aggregator, {
         
         fix_NaN: true,
         value_if_NaN: 0,
+        empty_value: 0,
         
         tostring: true,
         
+        // Used when you are using "formatedNumber" as parser.
+        sep: ",",
+        dec: ".",
+        group: 3,
+
         // If set to true, the target elements will be 
         // updated with the aggregated value when the aggregator is initalized
         start_by_aggregate: true
@@ -405,9 +421,12 @@ $.extend($.aggregator, {
         var _options = {};
         
         if ( typeof options == "string" ) 
-            options = {target:options};
+            options = {target: options};
         
-        options = $.extend(true, _options, $.aggregator.options, options);
+        $.extend(true, _options, $.aggregator.options, options);
+
+        if ( typeof _options.parser == "string" && converters[_options.parser] )
+            _options.converter = converters[_options.parser];
 
         $.each(option_maps, function(option, object) {
             _options[option] = getOption(_options, option, object);
@@ -474,7 +493,6 @@ $.aggregator.handler = function(element) {
     this.target = [];
 };
 
-var handler_message_prefix = "$.aggregator.handler::";
 $.aggregator.handler.prototype = {
     
     /**
@@ -482,10 +500,7 @@ $.aggregator.handler.prototype = {
      */
     get: function(type, index) {
         if ( ! type ) {
-            var ret = [];
-            $.merge(ret, this.source);
-            $.merge(ret, this.target);
-            return ret;
+            return $.merge($.merge([], this.source), this.target);
         }
         
         if ( $.inArray(type, element_types) == -1 )
@@ -527,19 +542,13 @@ $.aggregator.handler.prototype = {
         var self = this;
         
         $.each(type ? [type] : element_types, function(_, type) {
-            var aggregators = self.get(type), i = 0, l = aggregators.length;
-            
-            if ( ! aggregators ) 
-                $.error(handler_message_prefix+"remove: invalid type: "+type);
-            
-            for (; i < l ; i++ ) {
-                if ( aggregators[i] === aggregator ) {
-                    delete aggregators[aggregators.length--];
-                }
-            }
+            var aggregators = self.get(type), i;
+
+            while ( (i = $.inArray(aggregator, aggregators)) != -1  )
+                aggregators.splice(i, 1);
         });
         
-        return this;
+        return self;
     },
     
     /**
@@ -566,15 +575,14 @@ $.aggregator.handler.prototype = {
      * @return self
      */
     _callAggregatorMethod: function(name, type, args) {
-        var self = this;
-        type || (type = SOURCE);
-        var aggregators = this.get(type), 
+        var self = this,
+            aggregators = this.get(type || SOURCE), 
             i = aggregators.length, 
             aggregator;
         
-        args = args || [];
+        args || (args = []);
         
-        while(i--) {
+        while ( i-- ) {
             aggregator = aggregators[i];
             if ( aggregator ) {
                 aggregator[name].apply(aggregator, args);
@@ -650,8 +658,58 @@ function getContentAttr(elem) {
  * Default parsers that parses the element values
  */
 var parsers = {
-    "int": parseInt,
-    "float": parseFloat
+    "int": function(num) {
+        return parseInt(num, 10);
+    },
+    "float": function(num) {
+        return parseFloat(num);
+    },
+    formatedNumber: function(n) {
+        var options = this.options,
+            dec = options.dec;
+            
+        n = n ? String(n) : '';
+
+        if ( n.length > 0 ) {
+            var num_grp_sep_re = unformat_number_regexps[dec] ||
+                    (unformat_number_regexps[dec] = new RegExp('\\' + dec, 'g'));
+
+            n = n.replace(num_grp_sep_re, '').replace(options.sep, '.');
+        }
+
+        if ( n.length > 0 ) {
+            return parseFloat(n);
+        }
+
+        return 0;
+    }
+};
+
+var converters = {
+    formatedNumber: function(n) {
+        var options = this.options,
+            dec = options.dec,
+            group = options.group;
+            
+        n = n ? String(n) : '';
+
+        if ( n.split )
+            n = n.split('.');
+        else
+            return n;
+
+        if ( n.length > 2 )
+            return n.join('.');
+        
+        var rnum = format_number_regexps[group] ||
+                        (format_number_regexps[group] = new RegExp("(\\d+)(\\d{"+group+"})"));
+        
+        while ( dec != '' && rnum.test(n[0]) ) {
+            n[0] = n[0].replace(rnum, '$1' + dec + '$2');
+        }
+
+        return n[0] + (n.length > 1 && n[1] != '' ? options.sep + n[1] : '');
+    }
 };
 
 /**
@@ -697,4 +755,4 @@ var option_maps = {
     method: aggregate_methods
 };
 
-}(jQuery));
+}(jQuery, window));
